@@ -1,22 +1,26 @@
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * ========================================================
+ * MAIN CLASS - BookMyStayApp
+ * ========================================================
+ * Integrated Use Cases 1, 2, 3, and 4
+ * Includes: Welcome, Initialization, Inventory (HashMap), and Search
+ * @version 4.0
+ */
 public class BookMyStayApp {
 
-    /**
-     * Application entry point.
-     * @param args Command-line arguments
-     */
     public static void main(String[] args) {
-        // UC 1:
+        // --- UC 1: Application Entry ---
         System.out.println("Welcome to the Hotel Booking Management System");
         System.out.println("System initialized successfully.");
         System.out.println("----------------------------------------------");
 
-        // UC2: Room Initialization & Static Availability
-        System.out.println("Hotel Room Initialization\n");
+        // --- UC 2: Room Initialization & Static Availability ---
+        System.out.println("Hotel Room Initialization (UC2)\n");
 
-        // Static availability variables (Pre-data structure approach)
+        // Static availability for UC2 demonstration
         int singleRoomAvailability = 5;
         int doubleRoomAvailability = 3;
         int suiteRoomAvailability = 2;
@@ -26,7 +30,6 @@ public class BookMyStayApp {
         Room doubleRm = new DoubleRoom();
         Room suite = new SuiteRoom();
 
-        // Displaying Details
         single.displayRoomDetails();
         System.out.println("Available: " + singleRoomAvailability + "\n");
 
@@ -35,20 +38,47 @@ public class BookMyStayApp {
 
         suite.displayRoomDetails();
         System.out.println("Available: " + suiteRoomAvailability);
+        System.out.println("----------------------------------------------");
 
         // --- UC 3: Centralized Room Inventory Management ---
         System.out.println("Hotel Room Inventory Status (UC3 - HashMap)\n");
 
-        // Initialize the centralized inventory
+        // Initialize the centralized inventory (Single Source of Truth)
         RoomInventory inventory = new RoomInventory();
 
-        // Use the helper method to display status from the HashMap
+        // Use the UC3 helper method to display status from the HashMap
         displayStatus(single, inventory);
         displayStatus(doubleRm, inventory);
         displayStatus(suite, inventory);
+        System.out.println("----------------------------------------------");
 
+        // --- UC 4: Room Search & Availability Check ---
+        System.out.println("Room Search Results (UC4 - Read Only)\n");
+
+        // Initialize Search Service
+        RoomSearchService searchService = new RoomSearchService();
+
+        // Perform search using the centralized inventory and room objects
+        searchService.searchAvailableRooms(inventory, single, doubleRm, suite);
     }
-    /** Abstract Class - Room */
+
+    // ========================================================
+    // HELPER METHODS
+    // ========================================================
+
+    /** UC3 Helper: Bridges Room and Inventory */
+    private static void displayStatus(Room room, RoomInventory inventory) {
+        room.displayRoomDetails();
+        String type = room.getClass().getSimpleName();
+        System.out.println("Inventory Count: " + inventory.getRoomAvailability().get(type));
+        System.out.println();
+    }
+
+    // ========================================================
+    // NESTED STATIC CLASSES
+    // ========================================================
+
+    /** UC2: Abstract Room Class */
     abstract static class Room {
         protected int numberOfBeds;
         protected int squareFeet;
@@ -63,40 +93,21 @@ public class BookMyStayApp {
         public void displayRoomDetails() {
             System.out.println("Beds: " + numberOfBeds);
             System.out.println("Size: " + squareFeet + " sqft");
-            System.out.println("Price per night: " + pricePerNight);
+            System.out.println("Price per night: Rs." + pricePerNight);
         }
     }
 
-    /** Concrete Class - SingleRoom */
+    /** Concrete Room Types */
     static class SingleRoom extends Room {
-        public SingleRoom() {
-            super(1, 250, 1500.0);
-            System.out.println("Single Room:");
-        }
+        public SingleRoom() { super(1, 250, 1500.0); System.out.println("Single Room:"); }
     }
 
-    /** Concrete Class - DoubleRoom */
     static class DoubleRoom extends Room {
-        public DoubleRoom() {
-            super(2, 400, 2500.0);
-            System.out.println("Double Room:");
-        }
+        public DoubleRoom() { super(2, 400, 2500.0); System.out.println("Double Room:"); }
     }
 
-    /** Concrete Class - SuiteRoom */
     static class SuiteRoom extends Room {
-        public SuiteRoom() {
-            super(3, 750, 5000.0);
-            System.out.println("Suite Room:");
-        }
-    }
-    /** UC3 Helper: Bridges Room and Inventory */
-    private static void displayStatus(Room room, RoomInventory inventory) {
-        room.displayRoomDetails();
-        String type = room.getClass().getSimpleName();
-        // Fetches from the centralized HashMap
-        System.out.println("Inventory Count: " + inventory.getRoomAvailability().get(type));
-        System.out.println();
+        public SuiteRoom() { super(3, 750, 5000.0); System.out.println("Suite Room:"); }
     }
 
     /** UC3: Centralized Inventory Class */
@@ -109,7 +120,6 @@ public class BookMyStayApp {
         }
 
         private void initializeInventory() {
-            // Mapping room types to counts - This replaces scattered variables
             roomAvailability.put("SingleRoom", 5);
             roomAvailability.put("DoubleRoom", 3);
             roomAvailability.put("SuiteRoom", 2);
@@ -120,4 +130,34 @@ public class BookMyStayApp {
         }
     }
 
+    /** UC4: Room Search Service (Read-Only) */
+    static class RoomSearchService {
+        public void searchAvailableRooms(
+                RoomInventory inventory,
+                Room singleRoom,
+                Room doubleRoom,
+                Room suiteRoom) {
+
+            Map<String, Integer> availability = inventory.getRoomAvailability();
+
+            // Logic: Only display if availability is > 0
+            if (availability.getOrDefault("SingleRoom", 0) > 0) {
+                System.out.println("[Search Hit] Single Room:");
+                singleRoom.displayRoomDetails();
+                System.out.println("Current Availability: " + availability.get("SingleRoom") + "\n");
+            }
+
+            if (availability.getOrDefault("DoubleRoom", 0) > 0) {
+                System.out.println("[Search Hit] Double Room:");
+                doubleRoom.displayRoomDetails();
+                System.out.println("Current Availability: " + availability.get("DoubleRoom") + "\n");
+            }
+
+            if (availability.getOrDefault("SuiteRoom", 0) > 0) {
+                System.out.println("[Search Hit] Suite Room:");
+                suiteRoom.displayRoomDetails();
+                System.out.println("Current Availability: " + availability.get("SuiteRoom") + "\n");
+            }
+        }
+    }
 }
