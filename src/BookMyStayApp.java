@@ -1,14 +1,5 @@
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
-/**
- * ========================================================
- * MAIN CLASS - BookMyStayApp
- * ========================================================
- * Integrated Use Cases 1, 2, 3, and 4
- * Includes: Welcome, Initialization, Inventory (HashMap), and Search
- * @version 4.0
- */
 public class BookMyStayApp {
 
     public static void main(String[] args) {
@@ -17,146 +8,148 @@ public class BookMyStayApp {
         System.out.println("System initialized successfully.");
         System.out.println("----------------------------------------------");
 
-        // --- UC 2: Room Initialization & Static Availability ---
-        System.out.println("Hotel Room Initialization (UC2)\n");
-
-        // Static availability for UC2 demonstration
-        int singleRoomAvailability = 5;
-        int doubleRoomAvailability = 3;
-        int suiteRoomAvailability = 2;
-
-        // Creating room objects using Polymorphism
+        // --- UC 2: Room Initialization ---
+        System.out.println("Hotel Room Initialization (UC2)...\n");
         Room single = new SingleRoom();
         Room doubleRm = new DoubleRoom();
         Room suite = new SuiteRoom();
-
-        single.displayRoomDetails();
-        System.out.println("Available: " + singleRoomAvailability + "\n");
-
-        doubleRm.displayRoomDetails();
-        System.out.println("Available: " + doubleRoomAvailability + "\n");
-
-        suite.displayRoomDetails();
-        System.out.println("Available: " + suiteRoomAvailability);
         System.out.println("----------------------------------------------");
 
-        // --- UC 3: Centralized Room Inventory Management ---
-        System.out.println("Hotel Room Inventory Status (UC3 - HashMap)\n");
-
-        // Initialize the centralized inventory (Single Source of Truth)
+        // --- UC 3: Centralized Inventory ---
+        System.out.println("Centralizing Inventory in HashMap (UC3)...\n");
         RoomInventory inventory = new RoomInventory();
-
-        // Use the UC3 helper method to display status from the HashMap
         displayStatus(single, inventory);
         displayStatus(doubleRm, inventory);
         displayStatus(suite, inventory);
         System.out.println("----------------------------------------------");
 
-        // --- UC 4: Room Search & Availability Check ---
-        System.out.println("Room Search Results (UC4 - Read Only)\n");
-
-        // Initialize Search Service
+        // --- UC 4: Room Search (Read-Only) ---
+        System.out.println("Room Search Results for Guest (UC4):\n");
         RoomSearchService searchService = new RoomSearchService();
-
-        // Perform search using the centralized inventory and room objects
         searchService.searchAvailableRooms(inventory, single, doubleRm, suite);
+        System.out.println("----------------------------------------------");
+
+        // --- UC 5: Booking Request Queue (FIFO) ---
+        System.out.println("Guest Submitting Booking Requests (UC5)...\n");
+        BookingRequestQueue bookingQueue = new BookingRequestQueue();
+        bookingQueue.addRequest(new Reservation("Guest_1", "SingleRoom"));
+        bookingQueue.addRequest(new Reservation("Guest_2", "DoubleRoom"));
+        bookingQueue.addRequest(new Reservation("Guest_3", "SingleRoom"));
+        System.out.println("----------------------------------------------");
+
+        // --- UC 6: Reservation Confirmation & Allocation ---
+        System.out.println("Processing Allocations & Preventing Double Booking (UC6)...\n");
+        RoomAllocationService allocationService = new RoomAllocationService();
+        allocationService.processAllocations(bookingQueue, inventory);
+
+        System.out.println("----------------------------------------------");
+        System.out.println("Final System State (All Use Cases Complete):");
+        displayStatus(single, inventory);
+        displayStatus(doubleRm, inventory);
+        displayStatus(suite, inventory);
     }
 
-    // ========================================================
-    // HELPER METHODS
-    // ========================================================
-
-    /** UC3 Helper: Bridges Room and Inventory */
+    /** Helper for display logic */
     private static void displayStatus(Room room, RoomInventory inventory) {
-        room.displayRoomDetails();
         String type = room.getClass().getSimpleName();
-        System.out.println("Inventory Count: " + inventory.getRoomAvailability().get(type));
-        System.out.println();
+        room.displayRoomDetails();
+        System.out.println("Availability: " + inventory.getRoomAvailability().get(type) + "\n");
     }
 
     // ========================================================
-    // NESTED STATIC CLASSES
+    // UC 2: Domain Model (Inheritance & Polymorphism)
     // ========================================================
-
-    /** UC2: Abstract Room Class */
     abstract static class Room {
-        protected int numberOfBeds;
-        protected int squareFeet;
-        protected double pricePerNight;
-
-        public Room(int numberOfBeds, int squareFeet, double pricePerNight) {
-            this.numberOfBeds = numberOfBeds;
-            this.squareFeet = squareFeet;
-            this.pricePerNight = pricePerNight;
-        }
-
+        protected int beds;
+        protected double price;
+        public Room(int beds, double price) { this.beds = beds; this.price = price; }
         public void displayRoomDetails() {
-            System.out.println("Beds: " + numberOfBeds);
-            System.out.println("Size: " + squareFeet + " sqft");
-            System.out.println("Price per night: Rs." + pricePerNight);
+            System.out.println("Beds: " + beds + " | Price per night: Rs." + price);
         }
     }
 
-    /** Concrete Room Types */
-    static class SingleRoom extends Room {
-        public SingleRoom() { super(1, 250, 1500.0); System.out.println("Single Room:"); }
+    static class SingleRoom extends Room { public SingleRoom() { super(1, 1500.0); System.out.println("Single Room Object Created."); } }
+    static class DoubleRoom extends Room { public DoubleRoom() { super(2, 2500.0); System.out.println("Double Room Object Created."); } }
+    static class SuiteRoom extends Room { public SuiteRoom() { super(3, 5000.0); System.out.println("Suite Room Object Created."); } }
+
+    // ========================================================
+    // UC 5: Reservation intent (Data Object)
+    // ========================================================
+    static class Reservation {
+        private String guestName;
+        private String roomType;
+        public Reservation(String name, String type) { this.guestName = name; this.roomType = type; }
+        public String getGuestName() { return guestName; }
+        public String getRoomType() { return roomType; }
+        @Override public String toString() { return guestName + " requested " + roomType; }
     }
 
-    static class DoubleRoom extends Room {
-        public DoubleRoom() { super(2, 400, 2500.0); System.out.println("Double Room:"); }
-    }
+    // ========================================================
+    // SERVICES & DATA STRUCTURES (UC 3, 4, 5, 6)
+    // ========================================================
 
-    static class SuiteRoom extends Room {
-        public SuiteRoom() { super(3, 750, 5000.0); System.out.println("Suite Room:"); }
-    }
-
-    /** UC3: Centralized Inventory Class */
+    /** UC 3: HashMap Inventory */
     static class RoomInventory {
-        private Map<String, Integer> roomAvailability;
-
+        private Map<String, Integer> availability = new HashMap<>();
         public RoomInventory() {
-            roomAvailability = new HashMap<>();
-            initializeInventory();
+            availability.put("SingleRoom", 5);
+            availability.put("DoubleRoom", 3);
+            availability.put("SuiteRoom", 2);
         }
+        public Map<String, Integer> getRoomAvailability() { return availability; }
+        public void decrement(String type) { availability.put(type, availability.get(type) - 1); }
+    }
 
-        private void initializeInventory() {
-            roomAvailability.put("SingleRoom", 5);
-            roomAvailability.put("DoubleRoom", 3);
-            roomAvailability.put("SuiteRoom", 2);
-        }
-
-        public Map<String, Integer> getRoomAvailability() {
-            return roomAvailability;
+    /** UC 4: Read-Only Search */
+    static class RoomSearchService {
+        public void searchAvailableRooms(RoomInventory inv, Room s, Room d, Room st) {
+            for (String type : inv.getRoomAvailability().keySet()) {
+                int count = inv.getRoomAvailability().get(type);
+                if (count > 0) {
+                    System.out.println("MATCH FOUND: " + type + " (" + count + " left)");
+                }
+            }
         }
     }
 
-    /** UC4: Room Search Service (Read-Only) */
-    static class RoomSearchService {
-        public void searchAvailableRooms(
-                RoomInventory inventory,
-                Room singleRoom,
-                Room doubleRoom,
-                Room suiteRoom) {
+    /** UC 5: FIFO Queue */
+    static class BookingRequestQueue {
+        private Queue<Reservation> queue = new LinkedList<>();
+        public void addRequest(Reservation res) {
+            queue.add(res);
+            System.out.println("FIFO Entry: " + res);
+        }
+        public Queue<Reservation> getQueue() { return queue; }
+    }
 
-            Map<String, Integer> availability = inventory.getRoomAvailability();
+    /** UC 6: Set-based Allocation */
+    static class RoomAllocationService {
+        private Map<String, Set<String>> allocatedRooms = new HashMap<>();
 
-            // Logic: Only display if availability is > 0
-            if (availability.getOrDefault("SingleRoom", 0) > 0) {
-                System.out.println("[Search Hit] Single Room:");
-                singleRoom.displayRoomDetails();
-                System.out.println("Current Availability: " + availability.get("SingleRoom") + "\n");
-            }
+        public RoomAllocationService() {
+            allocatedRooms.put("SingleRoom", new HashSet<>());
+            allocatedRooms.put("DoubleRoom", new HashSet<>());
+            allocatedRooms.put("SuiteRoom", new HashSet<>());
+        }
 
-            if (availability.getOrDefault("DoubleRoom", 0) > 0) {
-                System.out.println("[Search Hit] Double Room:");
-                doubleRoom.displayRoomDetails();
-                System.out.println("Current Availability: " + availability.get("DoubleRoom") + "\n");
-            }
+        public void processAllocations(BookingRequestQueue bQueue, RoomInventory inventory) {
+            Queue<Reservation> requests = bQueue.getQueue();
+            while (!requests.isEmpty()) {
+                Reservation res = requests.poll(); // FIFO Dequeue
+                String type = res.getRoomType();
 
-            if (availability.getOrDefault("SuiteRoom", 0) > 0) {
-                System.out.println("[Search Hit] Suite Room:");
-                suiteRoom.displayRoomDetails();
-                System.out.println("Current Availability: " + availability.get("SuiteRoom") + "\n");
+                if (inventory.getRoomAvailability().get(type) > 0) {
+                    // Unique Room ID generation
+                    String roomID = type.substring(0, 1) + "R-" + (101 + allocatedRooms.get(type).size());
+
+                    // UC6: Uniqueness check via Set
+                    allocatedRooms.get(type).add(roomID);
+                    inventory.decrement(type);
+
+                    System.out.println("SUCCESS: " + res.getGuestName() + " assigned to " + roomID);
+                } else {
+                    System.out.println("REJECTED: No availability for " + res.getGuestName());
+                }
             }
         }
     }
