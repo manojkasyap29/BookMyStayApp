@@ -1,3 +1,6 @@
+import java.util.HashMap;
+import java.util.Map;
+
 public class BookMyStayApp {
 
     /**
@@ -32,6 +35,17 @@ public class BookMyStayApp {
 
         suite.displayRoomDetails();
         System.out.println("Available: " + suiteRoomAvailability);
+
+        // --- UC 3: Centralized Room Inventory Management ---
+        System.out.println("Hotel Room Inventory Status (UC3 - HashMap)\n");
+
+        // Initialize the centralized inventory
+        RoomInventory inventory = new RoomInventory();
+
+        // Use the helper method to display status from the HashMap
+        displayStatus(single, inventory);
+        displayStatus(doubleRm, inventory);
+        displayStatus(suite, inventory);
 
     }
     /** Abstract Class - Room */
@@ -74,6 +88,35 @@ public class BookMyStayApp {
         public SuiteRoom() {
             super(3, 750, 5000.0);
             System.out.println("Suite Room:");
+        }
+    }
+    /** UC3 Helper: Bridges Room and Inventory */
+    private static void displayStatus(Room room, RoomInventory inventory) {
+        room.displayRoomDetails();
+        String type = room.getClass().getSimpleName();
+        // Fetches from the centralized HashMap
+        System.out.println("Inventory Count: " + inventory.getRoomAvailability().get(type));
+        System.out.println();
+    }
+
+    /** UC3: Centralized Inventory Class */
+    static class RoomInventory {
+        private Map<String, Integer> roomAvailability;
+
+        public RoomInventory() {
+            roomAvailability = new HashMap<>();
+            initializeInventory();
+        }
+
+        private void initializeInventory() {
+            // Mapping room types to counts - This replaces scattered variables
+            roomAvailability.put("SingleRoom", 5);
+            roomAvailability.put("DoubleRoom", 3);
+            roomAvailability.put("SuiteRoom", 2);
+        }
+
+        public Map<String, Integer> getRoomAvailability() {
+            return roomAvailability;
         }
     }
 
