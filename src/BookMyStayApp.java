@@ -69,6 +69,20 @@ public class BookMyStayApp {
         System.out.println("Administrative Reporting Service (UC8)\n");
         BookingReportService reportService = new BookingReportService();
         reportService.generateSummaryReport(history);
+        System.out.println("----------------------------------------------");
+
+        // --- UC 10: Booking Cancellation & Inventory Rollback ---
+        System.out.println("Booking Cancellation Service (UC10)...\n");
+        CancellationService cancellationService = new CancellationService();
+
+        // Simulate cancellation for Guest_2
+        System.out.println("Requesting Cancellation for Guest_2...");
+        cancellationService.cancelBooking("Guest_2", inventory, history, allocationService);
+
+        System.out.println("Verifying Rollback State:");
+        displayInventoryStatus(inventory);
+        cancellationService.displayRollbackHistory();
+        System.out.println("----------------------------------------------");
     }
 
     private static void displayInventoryStatus(RoomInventory inv) {
@@ -92,6 +106,7 @@ public class BookMyStayApp {
         public Reservation(String name, String type) { this.guestName = name; this.roomType = type; }
         public String getGuestName() { return guestName; }
         public String getRoomType() { return roomType; }
+        public String getAssignedRoomID() { return assignedRoomID; }
         public void setAssignedRoomID(String id) { this.assignedRoomID = id; }
         @Override public String toString() { return "Guest: " + guestName + " | Room: " + assignedRoomID + " (" + roomType + ")"; }
     }
@@ -110,6 +125,7 @@ public class BookMyStayApp {
         private List<Reservation> historyList = new ArrayList<>(); // Sequential Audit Trail
 
         public void recordBooking(Reservation res) { historyList.add(res); }
+        public void removeBooking(Reservation res) { historyList.remove(res); }
         public List<Reservation> getHistory() { return Collections.unmodifiableList(historyList); }
     }
 
@@ -135,6 +151,7 @@ public class BookMyStayApp {
         public RoomInventory() { counts.put("SingleRoom", 5); counts.put("DoubleRoom", 3); counts.put("SuiteRoom", 2); }
         public Map<String, Integer> getRoomAvailability() { return counts; }
         public void decrement(String type) { counts.put(type, counts.get(type) - 1); }
+        public void increment(String type) { counts.put(type, counts.get(type) + 1); }
     }
 
     static class RoomSearchService {
@@ -158,6 +175,12 @@ public class BookMyStayApp {
             allocated.put("DoubleRoom", new HashSet<>());
             allocated.put("SuiteRoom", new HashSet<>());
         }
+        
+        public void releaseRoom(String type, String id) {
+            if (allocated.containsKey(type)) {
+                allocated.get(type).remove(id);
+            }
+        }
 
         public Map<String, String> processAllocations(BookingRequestQueue bq, RoomInventory inv, BookingHistory history) {
             Map<String, String> mapping = new HashMap<>();
@@ -178,6 +201,46 @@ public class BookMyStayApp {
                 }
             }
             return mapping;
+        }
+    }
+
+    static class CancellationService {
+        private Stack<String> releasedRoomIds = new Stack<>(); // LIFO Rollback structure
+
+        public void cancelBooking(String guestName, RoomInventory inventory, BookingHistory history, RoomAllocationService allocationService) {
+            Reservation target = null;
+            for (Reservation r : history.getHistory()) {
+                if (r.getGuestName().equalsIgnoreCase(guestName) && r.getAssignedRoomID() != null) {
+                    target = r;
+                    break;
+                }
+            }
+
+            if (target != null) {
+                String roomId = target.getAssignedRoomID();
+                String type = target.getRoomType();
+
+                // 1. Add to rollback structure (Stack - LIFO)
+                releasedRoomIds.push(roomId);
+
+                // 2. Release from allocation service
+                allocationService.releaseRoom(type, roomId);
+
+                // 3. Restore inventory
+                inventory.increment(type);
+
+                // 4. Update history
+                history.removeBooking(target);
+
+                System.out.println("Cancellation Successful for " + guestName);
+                System.out.println("Rolled back Room ID: " + roomId);
+            } else {
+                System.out.println("Cancellation Failed: Booking not found for " + guestName);
+            }
+        }
+
+        public void displayRollbackHistory() {
+            System.out.println("Recently Released Rooms (LIFO): " + releasedRoomIds);
         }
     }
 
