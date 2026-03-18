@@ -83,6 +83,10 @@ public class BookMyStayApp {
         displayInventoryStatus(inventory);
         cancellationService.displayRollbackHistory();
         System.out.println("----------------------------------------------");
+
+        // --- UC 11: Concurrent Booking Simulation ---
+        ConcurrentBookingSimulation simulation = new ConcurrentBookingSimulation();
+        simulation.runSimulation(inventory, allocationService, history);
     }
 
     private static void displayInventoryStatus(RoomInventory inv) {
@@ -122,11 +126,11 @@ public class BookMyStayApp {
     // PERSISTENCE & REPORTING (UC 8)
     // ========================================================
     static class BookingHistory {
-        private List<Reservation> historyList = new ArrayList<>(); // Sequential Audit Trail
+        private List<Reservation> historyList = Collections.synchronizedList(new ArrayList<>()); // Thread-safe List
 
         public void recordBooking(Reservation res) { historyList.add(res); }
         public void removeBooking(Reservation res) { historyList.remove(res); }
-        public List<Reservation> getHistory() { return Collections.unmodifiableList(historyList); }
+        public List<Reservation> getHistory() { return new ArrayList<>(historyList); } // Return copy for safe iteration
     }
 
     static class BookingReportService {
@@ -147,11 +151,28 @@ public class BookMyStayApp {
     // LOGIC SERVICES (UC 3, 4, 5, 6, 7)
     // ========================================================
     static class RoomInventory {
-        private Map<String, Integer> counts = new HashMap<>();
+        private Map<String, Integer> counts = new HashMap<>(); // Shared Mutable State
+
         public RoomInventory() { counts.put("SingleRoom", 5); counts.put("DoubleRoom", 3); counts.put("SuiteRoom", 2); }
-        public Map<String, Integer> getRoomAvailability() { return counts; }
-        public void decrement(String type) { counts.put(type, counts.get(type) - 1); }
-        public void increment(String type) { counts.put(type, counts.get(type) + 1); }
+        
+        public synchronized Map<String, Integer> getRoomAvailability() { return new HashMap<>(counts); } // Return copy
+        
+        // Critical Section: Atomic check and update
+        public synchronized boolean tryReduceInventory(String type) {
+            int current = counts.getOrDefault(type, 0);
+            if (current > 0) {
+                counts.put(type, current - 1);
+                return true;
+            }
+            return false;
+        }
+
+        public synchronized void increment(String type) { counts.put(type, counts.get(type) + 1); }
+        
+        // Deprecated: Unsafe method kept for backward compatibility if needed, but safe version preferred
+        public synchronized void decrement(String type) { 
+             if (counts.get(type) > 0) counts.put(type, counts.get(type) - 1); 
+        }
     }
 
     static class RoomSearchService {
@@ -164,16 +185,30 @@ public class BookMyStayApp {
 
     static class BookingRequestQueue {
         private Queue<Reservation> queue = new LinkedList<>(); // FIFO
-        public void addRequest(Reservation res) { queue.add(res); System.out.println("Added to Queue: " + res.getGuestName()); }
-        public Queue<Reservation> getQueue() { return queue; }
+        
+        public synchronized void addRequest(Reservation res) { 
+            queue.add(res); 
+            System.out.println(Thread.currentThread().getName() + " Added to Queue: " + res.getGuestName()); 
+        }
+        
+        public synchronized Reservation pollRequest() {
+            return queue.poll();
+        }
+        
+        public synchronized boolean isEmpty() {
+            return queue.isEmpty();
+        }
+        
+        public synchronized Queue<Reservation> getQueue() { return queue; }
     }
 
     static class RoomAllocationService {
-        private Map<String, Set<String>> allocated = new HashMap<>();
+        private Map<String, Set<String>> allocated = new java.util.concurrent.ConcurrentHashMap<>();
+        
         public RoomAllocationService() {
-            allocated.put("SingleRoom", new HashSet<>());
-            allocated.put("DoubleRoom", new HashSet<>());
-            allocated.put("SuiteRoom", new HashSet<>());
+            allocated.put("SingleRoom", Collections.synchronizedSet(new HashSet<>()));
+            allocated.put("DoubleRoom", Collections.synchronizedSet(new HashSet<>()));
+            allocated.put("SuiteRoom", Collections.synchronizedSet(new HashSet<>()));
         }
         
         public void releaseRoom(String type, String id) {
@@ -182,25 +217,101 @@ public class BookMyStayApp {
             }
         }
 
+        // Thread-safe allocation method
+        public boolean allocateRoom(Reservation r, RoomInventory inv, BookingHistory history) {
+             String type = r.getRoomType();
+             
+             // 1. Thread-Safe Inventory Check
+             if (inv.tryReduceInventory(type)) {
+                 
+                 // 2. Critical Section: ID Generation
+                 String id;
+                 Set<String> roomSet = allocated.get(type);
+                 synchronized(roomSet) {
+                     id = type.substring(0, 1).toUpperCase() + "R-" + (101 + roomSet.size());
+                     // Handle potential collision (simplified)
+                     while(roomSet.contains(id)) {
+                         id = type.substring(0, 1).toUpperCase() + "R-" + (101 + roomSet.size() + new Random().nextInt(100));
+                     }
+                     roomSet.add(id);
+                 }
+                 
+                 r.setAssignedRoomID(id);
+                 history.recordBooking(r);
+                 System.out.println(Thread.currentThread().getName() + " Confirmed: " + r.getGuestName() + " -> " + id);
+                 return true;
+             } else {
+                 System.out.println(Thread.currentThread().getName() + " Failed: No Inventory for " + r.getGuestName() + " (" + type + ")");
+                 return false;
+             }
+        }
+
         public Map<String, String> processAllocations(BookingRequestQueue bq, RoomInventory inv, BookingHistory history) {
             Map<String, String> mapping = new HashMap<>();
-            Queue<Reservation> q = bq.getQueue();
-            while (!q.isEmpty()) {
-                Reservation r = q.poll(); // Get first in line
-                String type = r.getRoomType();
-                if (inv.getRoomAvailability().get(type) > 0) {
-                    // Generate unique ID using Set size to avoid collision
-                    String id = type.substring(0, 1).toUpperCase() + "R-" + (101 + allocated.get(type).size());
-                    allocated.get(type).add(id);
-                    inv.decrement(type);
-                    r.setAssignedRoomID(id);
-
-                    history.recordBooking(r); // Persistence mindset (UC8)
-                    mapping.put(r.getGuestName(), id);
-                    System.out.println("Confirmed: " + r.getGuestName() + " -> " + id);
+            
+            while (!bq.isEmpty()) {
+                Reservation r = bq.pollRequest();
+                if (r != null) {
+                    if (allocateRoom(r, inv, history)) {
+                        mapping.put(r.getGuestName(), r.getAssignedRoomID());
+                    }
                 }
             }
             return mapping;
+        }
+    }
+
+    static class ConcurrentBookingSimulation {
+        public void runSimulation(RoomInventory inventory, RoomAllocationService allocationService, BookingHistory history) {
+            System.out.println("\n--- Starting Concurrent Booking Simulation (UC11) ---");
+            BookingRequestQueue sharedQueue = new BookingRequestQueue();
+
+            // Runnable Task: Guests submitting requests
+            Runnable guestTask = () -> {
+                String threadName = Thread.currentThread().getName();
+                for (int i = 1; i <= 3; i++) {
+                   sharedQueue.addRequest(new Reservation(threadName + "_Guest_" + i, "SingleRoom"));
+                   try { Thread.sleep(50); } catch (InterruptedException e) {}
+                }
+            };
+
+            // Runnable Task: System processing requests
+            Runnable processorTask = () -> {
+                while (true) {
+                    Reservation r = sharedQueue.pollRequest();
+                    if (r != null) {
+                        allocationService.allocateRoom(r, inventory, history);
+                    } else {
+                        // In a real system, would wait. Here we break if empty for demo simplicity, 
+                        // but with concurrent producers we should wait a bit or use a better signal.
+                        // For this simulation, we'll just check if guests are done. 
+                           try { Thread.sleep(100); } catch (InterruptedException e) {}
+                           if (sharedQueue.isEmpty()) break; 
+                    }
+                }
+            };
+
+            // Simulation: 3 Concurrent Guest Threads + 2 Processor Threads
+            Thread g1 = new Thread(guestTask, "MobileApp");
+            Thread g2 = new Thread(guestTask, "WebPortal");
+            Thread g3 = new Thread(guestTask, "Kiosk");
+            
+            // Start Producers
+            g1.start(); g2.start(); g3.start();
+
+            // Start Consumers/Processors
+            Thread p1 = new Thread(processorTask, "Processor-1");
+            Thread p2 = new Thread(processorTask, "Processor-2");
+            p1.start(); p2.start();
+
+            try {
+                g1.join(); g2.join(); g3.join();
+                // Wait for processors to finish emptying the queue
+                // (In robust code, use ExecutorService or CountDownLatch)
+                Thread.sleep(2000); 
+            } catch (InterruptedException e) { e.printStackTrace(); }
+
+            System.out.println("--- Concurrent Simulation Completed ---");
         }
     }
 
