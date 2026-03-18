@@ -1,4 +1,5 @@
 import java.util.*;
+import java.io.*;
 
 /**
  * BookMyStayApp - Final Integrated Version
@@ -24,6 +25,13 @@ public class BookMyStayApp {
         // --- UC 3: Centralized Inventory ---
         System.out.println("Centralizing Inventory in HashMap (UC3)...\n");
         RoomInventory inventory = new RoomInventory();
+        BookingHistory history = new BookingHistory();
+        
+        // --- UC 12: Data Persistence & System Recovery ---
+        System.out.println("Checking for Persisted Data (UC12)...\n");
+        PersistenceService persistenceService = new PersistenceService();
+        persistenceService.loadSystemState(inventory, history);
+        
         displayInventoryStatus(inventory);
         System.out.println("----------------------------------------------");
 
@@ -44,7 +52,7 @@ public class BookMyStayApp {
         // --- UC 6 & 8: Allocation and Persistence ---
         System.out.println("Processing Allocations & Tracking History (UC6 & UC8)...\n");
         RoomAllocationService allocationService = new RoomAllocationService();
-        BookingHistory history = new BookingHistory();
+        // BookingHistory history = new BookingHistory(); // Already created and potentially loaded
 
         // This processes the queue, updates inventory, and saves to history list
         Map<String, String> successfulAllocations = allocationService.processAllocations(bookingQueue, inventory, history);
@@ -87,6 +95,11 @@ public class BookMyStayApp {
         // --- UC 11: Concurrent Booking Simulation ---
         ConcurrentBookingSimulation simulation = new ConcurrentBookingSimulation();
         simulation.runSimulation(inventory, allocationService, history);
+        
+        // --- UC 12: Saving State on Shutdown ---
+        System.out.println("Saving System State (UC12)...\n");
+        persistenceService.saveSystemState(inventory, history);
+        System.out.println("----------------------------------------------");
     }
 
     private static void displayInventoryStatus(RoomInventory inv) {
@@ -105,7 +118,8 @@ public class BookMyStayApp {
     static class DoubleRoom extends Room { public DoubleRoom() { super(2, 2500.0); } }
     static class SuiteRoom extends Room { public SuiteRoom() { super(3, 5000.0); } }
 
-    static class Reservation {
+    static class Reservation implements Serializable {
+        private static final long serialVersionUID = 1L;
         private String guestName; private String roomType; private String assignedRoomID;
         public Reservation(String name, String type) { this.guestName = name; this.roomType = type; }
         public String getGuestName() { return guestName; }
@@ -125,11 +139,13 @@ public class BookMyStayApp {
     // ========================================================
     // PERSISTENCE & REPORTING (UC 8)
     // ========================================================
-    static class BookingHistory {
+    static class BookingHistory implements Serializable {
+        private static final long serialVersionUID = 1L;
         private List<Reservation> historyList = Collections.synchronizedList(new ArrayList<>()); // Thread-safe List
 
         public void recordBooking(Reservation res) { historyList.add(res); }
         public void removeBooking(Reservation res) { historyList.remove(res); }
+        public void setHistoryList(List<Reservation> list) { this.historyList.addAll(list); }
         public List<Reservation> getHistory() { return new ArrayList<>(historyList); } // Return copy for safe iteration
     }
 
@@ -150,11 +166,14 @@ public class BookMyStayApp {
     // ========================================================
     // LOGIC SERVICES (UC 3, 4, 5, 6, 7)
     // ========================================================
-    static class RoomInventory {
+    static class RoomInventory implements Serializable {
+        private static final long serialVersionUID = 1L;
         private Map<String, Integer> counts = new HashMap<>(); // Shared Mutable State
 
         public RoomInventory() { counts.put("SingleRoom", 5); counts.put("DoubleRoom", 3); counts.put("SuiteRoom", 2); }
         
+        public void setCounts(Map<String, Integer> loadedCounts) { this.counts = loadedCounts; }
+
         public synchronized Map<String, Integer> getRoomAvailability() { return new HashMap<>(counts); } // Return copy
         
         // Critical Section: Atomic check and update
@@ -352,6 +371,41 @@ public class BookMyStayApp {
 
         public void displayRollbackHistory() {
             System.out.println("Recently Released Rooms (LIFO): " + releasedRoomIds);
+        }
+    }
+
+    static class PersistenceService {
+        private static final String DATA_FILE = "system_state.ser";
+
+        public void saveSystemState(RoomInventory inventory, BookingHistory history) {
+            try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(DATA_FILE))) {
+                oos.writeObject(inventory);
+                oos.writeObject(history);
+                System.out.println("System state saved successfully to " + DATA_FILE);
+            } catch (IOException e) {
+                System.err.println("Error saving system state: " + e.getMessage());
+            }
+        }
+
+        public void loadSystemState(RoomInventory inventory, BookingHistory history) {
+            File file = new File(DATA_FILE);
+            if (!file.exists()) {
+                System.out.println("No persistence file found. Starting with fresh state.");
+                return;
+            }
+
+            try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(DATA_FILE))) {
+                RoomInventory loadedInventory = (RoomInventory) ois.readObject();
+                BookingHistory loadedHistory = (BookingHistory) ois.readObject();
+
+                // Restore
+                inventory.setCounts(loadedInventory.getRoomAvailability()); // Use getRoomAvailability which returns map copy
+                history.setHistoryList(loadedHistory.getHistory());
+
+                System.out.println("System state restored from " + DATA_FILE);
+            } catch (IOException | ClassNotFoundException e) {
+                System.err.println("Error loading system state: " + e.getMessage());
+            }
         }
     }
 
